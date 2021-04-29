@@ -47,6 +47,149 @@ struct keyValueList {
     struct keyValueList* nextPair;
 };
 
+char* getKeyValue(struct keyValueList* list, char* sentKey) {
+
+    if (list == NULL){
+        return NULL;
+    }
+
+    struct keyValueList* curr = list;
+
+    while(curr != NULL){
+        
+        if(strcmp(curr->key, sentKey) == 0){
+            return curr->value;
+        }
+
+        curr = curr->nextPair;
+    }
+
+    return NULL;   
+}
+
+//  1 => 2
+
+struct keyValueList* deleteKeyValue(struct keyValueList* list, char* sentKey) {
+    struct keyValueList* curr = list;
+    struct keyValueList* prev = NULL;
+
+    while (curr != NULL) {
+
+        if (strcmp(curr->key, sentKey) == 0) {
+            if (prev == NULL) { // first node is the one we want to delete
+                free(curr->key);
+                free(curr->value);
+                list = list->nextPair;
+
+            } else if (curr->nextPair == NULL) { // if its the last one
+                prev->nextPair = NULL;
+                free(curr->key);
+                free(curr->value);
+                free(curr);
+            } else { // its in the middle of two nodes
+                prev->nextPair = curr->nextPair;
+
+                free(curr->key);
+                free(curr->value);
+                free(curr);            
+            }
+
+            return list;
+
+        }
+
+        prev = curr;
+        curr = curr->nextPair;
+    }
+
+
+
+    return list;
+}
+
+struct keyValueList* setKeyValue(struct keyValueList* list, char* sentKey, char* sentValue) {
+    if (list == NULL) { // no nodes yet
+        list = malloc(sizeof(struct keyValueList));
+         
+        list->key = malloc(sizeof(char) * strlen(sentKey) + 1);
+        strcpy(list->key, sentKey);
+
+        list->value = malloc(sizeof(char) * strlen(sentValue) + 1);
+        strcpy(list->value, sentValue);
+
+        list->nextPair = NULL;
+
+         return list;
+    }
+
+    struct keyValueList* curr = list;
+    struct keyValueList* prev = NULL;
+
+    while (curr != NULL) {
+        if (strcmp(curr->key, sentKey) == 0) { // if the key already exists
+            strcpy(curr->value, sentValue);
+
+            return list;
+        } else if (strcmp(sentKey, curr->key) < 0) {
+            struct keyValueList* temp = malloc(sizeof(struct keyValueList));
+         
+            temp->key = malloc(sizeof(char) * strlen(sentKey) + 1);
+            strcpy(temp->key, sentKey);
+
+            temp->value = malloc(sizeof(char) * strlen(sentValue) + 1);
+            strcpy(temp->value, sentValue);
+
+            if (prev == NULL) {
+                temp->nextPair = curr;
+                list = temp;
+
+                return list;
+            }
+
+            prev->nextPair = temp;
+            temp->nextPair = curr;
+
+            return list;
+        } else {
+            prev = curr;
+
+            if (curr->nextPair == NULL) {
+                struct keyValueList* temp = malloc(sizeof(struct keyValueList));
+            
+                temp->key = malloc(sizeof(char) * strlen(sentKey) + 1);
+                strcpy(temp->key, sentKey);
+
+                temp->value = malloc(sizeof(char) * strlen(sentValue) + 1);
+                strcpy(temp->value, sentValue);
+
+                temp->nextPair = NULL;
+
+                curr->nextPair = temp;
+
+                return list;
+            }
+
+            curr = curr->nextPair;
+        }
+    }
+
+    return list;
+}
+
+void printList(struct keyValueList* list) {
+    printf("\nPrinting List\n");
+
+    struct keyValueList* curr = list;
+
+    while (curr != NULL) {
+        printf("%s | %s => ", curr->key, curr->value);
+        curr = curr->nextPair;
+    } 
+
+    printf("\n");
+    return;
+}
+
 // void insertKeyValue(struct keyValueList, char* key, char* value) {
 
 // }
@@ -59,6 +202,7 @@ struct connection {
     struct sockaddr_storage addr;
     socklen_t addr_len;
     int fd;
+    struct keyValueList* list;
 };
 
 int server(char *port);
@@ -87,6 +231,8 @@ int server(char *port)
     struct connection *con;
     int error, sfd;
     pthread_t tid;
+
+    struct keyValueList* list = NULL;
 
     // initialize hints
     memset(&hint, 0, sizeof(struct addrinfo));
@@ -147,6 +293,7 @@ int server(char *port)
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
 
+    con->list = list;
 
     // at this point sfd is bound and listening
     printf("Waiting for connection\n");
@@ -181,6 +328,8 @@ int server(char *port)
         	fprintf(stderr, "sigmask: %s\n", strerror(error));
         	abort();
         }
+
+        con->list = list;
 
 		// spin off a worker thread to handle the remote connection
         error = pthread_create(&tid, NULL, echo, con);
@@ -317,11 +466,12 @@ void *echo(void *arg)
                 printf("Executing commands and resetting\n");
 
                 if (strcmp(command, "GET") == 0) {
-                    
+                    printf("GETTING\n");
                 } else if (strcmp(command, "SET") == 0) {
-
+                    c->list = setKeyValue(c->list, key, value);
+                    printList(c->list);
                 } else if (strcmp(command, "DEL") == 0) {
-                    
+                    printf("DELETEING\n");
                 }
 
                 i = 1;
