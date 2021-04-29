@@ -1,0 +1,4 @@
+.vscode/*
+*.out
+send.c
+sendrev.c
