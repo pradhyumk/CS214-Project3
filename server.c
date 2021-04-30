@@ -443,6 +443,16 @@ void *echo(void *arg)
                     strcpy(command, sb.data);
                     n = 5;
                     i++;
+                } else { // this is a bad format; user put an invalid command
+                    write(sock2, "ERR\nBAD\n", 8);
+
+                    free(sb.data); // reset the data string
+                    sb.data = malloc(sizeof(char));
+                    sb.data[0] = '\0';
+                    sb.length = 1;
+                    sb.used = 1;
+
+                    break;
                 }
                // printf("Command: %s\n", command);
             } else if (i == 2) { // need to save the size
