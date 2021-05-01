@@ -47,7 +47,9 @@ struct keyValueList {
     struct keyValueList* nextPair;
 };
 
-char* getKeyValue(struct keyValueList* list, char* sentKey) {
+char* getKeyValue(struct keyValueList* list, char* sentKey, pthread_mutex_t lock) {
+
+    pthread_mutex_lock(&lock);
 
     if (list == NULL){
         return NULL;
@@ -64,11 +66,17 @@ char* getKeyValue(struct keyValueList* list, char* sentKey) {
         curr = curr->nextPair;
     }
 
+
+    pthread_mutex_unlock(&lock);
+
     return NULL;   
 }
 
 
-struct keyValueList* deleteKeyValue(struct keyValueList* list, char* sentKey) {
+struct keyValueList* deleteKeyValue(struct keyValueList* list, char* sentKey, pthread_mutex_t lock) {
+
+    pthread_mutex_lock(&lock);
+
     struct keyValueList* curr = list;
     struct keyValueList* prev = NULL;
 
@@ -101,12 +109,14 @@ struct keyValueList* deleteKeyValue(struct keyValueList* list, char* sentKey) {
         curr = curr->nextPair;
     }
 
-
-
+    pthread_mutex_unlock(&lock);
     return list;
 }
 
-struct keyValueList* setKeyValue(struct keyValueList* list, char* sentKey, char* sentValue) {
+struct keyValueList* setKeyValue(struct keyValueList* list, char* sentKey, char* sentValue, pthread_mutex_t lock) {
+    
+    pthread_mutex_lock(&lock);
+    
     if (list == NULL) { // no nodes yet
         list = malloc(sizeof(struct keyValueList));
          
@@ -118,7 +128,7 @@ struct keyValueList* setKeyValue(struct keyValueList* list, char* sentKey, char*
 
         list->nextPair = NULL;
 
-         return list;
+        return list;
     }
 
     struct keyValueList* curr = list;
@@ -173,6 +183,10 @@ struct keyValueList* setKeyValue(struct keyValueList* list, char* sentKey, char*
     }
 
     return list;
+
+    pthread_mutex_unlock(&lock);
+
+    
 }
 
 void sigint_hander(int signum){
@@ -219,6 +233,7 @@ struct connection {
     struct sockaddr_storage addr;
     socklen_t addr_len;
     int fd;
+    pthread_mutex_t lock;
 };
 
 int server(char *port);
@@ -248,8 +263,6 @@ int server(char *port)
     struct connection *con;
     int error, sfd;
     pthread_t tid;
-
-    // struct keyValueList* list = NULL;
 
     // initialize hints
     memset(&hint, 0, sizeof(struct addrinfo));
@@ -310,6 +323,8 @@ int server(char *port)
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
 
+    pthread_mutex_t lock;
+
     // at this point sfd is bound and listening
     printf("Waiting for connection\n");
 	while (running) {
@@ -345,6 +360,12 @@ int server(char *port)
         }
 
 		// spin off a worker thread to handle the remote connection
+        if (pthread_mutex_init(&lock, NULL) != 0) {
+            write(con->fd, "ERR\nSRV\n", 8);
+
+            return -1;
+        }
+        con->lock = lock;
         error = pthread_create(&tid, NULL, echo, con);
 
 		// if we couldn't spin off the thread, clean up and wait for another connection
@@ -368,7 +389,11 @@ int server(char *port)
     }
     puts("No longer listening.");
 	pthread_detach(pthread_self());
-    freeList(list);
+
+    if (!(list == NULL)) {
+        freeList(list);
+    }
+    list = NULL;
 	pthread_exit(NULL);
     
     // never reach here
@@ -414,8 +439,8 @@ void *echo(void *arg)
     int i = 1; // which payload we are on.
     int numCharacters = 0;
     int size;
-    char* key;
-    char* value;
+    char* key = NULL;
+    char* value = NULL;
 
 
     write(sock2, "CONNECTED TO SERVER\n", 20);
@@ -439,9 +464,6 @@ void *echo(void *arg)
             }
         } else if (cd == '\n') { // now we add this to the word
             if (i == 1) { //first payload (command)
-                if (sb.used != 3) { // the index of null terminator is not 
-                    // throw error to socket saying invalid command
-                } 
                 if (strcmp(sb.data, "GET") == 0 || strcmp(sb.data, "DEL") == 0) {
                     strcpy(command, sb.data);
                     n = 4;
@@ -459,8 +481,8 @@ void *echo(void *arg)
                     sb.data[0] = '\0';
                     sb.length = 1;
                     sb.used = 1;
-                    free(key);
-                    free(value);
+                    // free(key);
+                    // free(value);
 
                     break;
                 }
@@ -481,8 +503,8 @@ void *echo(void *arg)
                     sb.length = 1;
                     sb.used = 1;
 
-                    free(key);
-                    free(value);
+                    // free(key);
+                    // free(value);
                     break;
                 }       
 
@@ -491,10 +513,12 @@ void *echo(void *arg)
                 key = malloc(sizeof(char) * sb.used + 1);
                 strcpy(key, sb.data);
                 i++;
+                numCharacters++;
             } else if (i == 4) { // dealing with value
                 value = malloc(sizeof(char) * sb.used + 1);
                 strcpy(value, sb.data);
                 i++;
+                numCharacters++;
             }
             
             free(sb.data); // reset the data string
@@ -504,9 +528,10 @@ void *echo(void *arg)
             sb.used = 1;
             
             if (n == i) { // execute the commands
-                
+                printf("NumChar: %d | Size: %d\n", numCharacters, size);
                 if (numCharacters != size){
-                   write(sock2, "ERR\nLEN\n", 8);
+                    printf("HERE\n");
+                    write(sock2, "ERR\nLEN\n", 8);
 
                     n = 0;
                     i = 1;
@@ -517,14 +542,14 @@ void *echo(void *arg)
                     sb.data[0] = '\0';
                     sb.length = 1;
                     sb.used = 1;
-                    free(key);
-                    free(value);
+                    // free(key);
+                    // free(value);
 
                     break;
                 }
 
                 if (strcmp(command, "GET") == 0) {
-                    char* val = getKeyValue(list, key);
+                    char* val = getKeyValue(list, key, c->lock);
                     if (val == NULL) {
                         write(sock2, "KNF\n", 4);
                     } else {
@@ -542,14 +567,18 @@ void *echo(void *arg)
                     }
 
                     free(key);
+                    key = NULL;
                 } else if (strcmp(command, "SET") == 0) {
-                    list = setKeyValue(list, key, value);
+                    list = setKeyValue(list, key, value, c->lock);
                     free(key);
                     free(value);
+                    key = NULL;
+                    value = NULL;
+
                     printList(list);
                     write(sock2, "OKS\n", 4);
                 } else if (strcmp(command, "DEL") == 0) {
-                    char* val = getKeyValue(list, key);
+                    char* val = getKeyValue(list, key, c->lock);
 
                     if (val == NULL) { // there is no key to delete
                         write(sock2, "KNF\n", 4);
@@ -558,7 +587,7 @@ void *echo(void *arg)
                         char* temp = malloc(sizeof(char) * strlen(val) + 1);
                         strcpy(temp, val);
 
-                        list = deleteKeyValue(list, key);
+                        list = deleteKeyValue(list, key, c->lock);
         
                         write(sock2, "OKD\n", 4);
 
@@ -575,6 +604,7 @@ void *echo(void *arg)
                     }
 
                     free(key);
+                    key = NULL;
                 }
 
                 i = 1;
@@ -587,6 +617,14 @@ void *echo(void *arg)
     }
   
     printf("[%s:%s] got EOF\n", host, port);
+
+    if (!(key == NULL)) {
+        free(key);
+    }
+
+    if (!(value == NULL)) {
+        free(value);
+    }
 
     fclose(fin);
     free(sb.data);
