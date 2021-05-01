@@ -2,3 +2,4 @@
 *.out
 send.c
 sendrev.c
+.vsls.json

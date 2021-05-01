@@ -379,9 +379,9 @@ int server(char *port)
 
 void *echo(void *arg)
 {
-    char host[100], port[10], buf[BUFSIZE + 1];
+    char host[100], port[10]; // buf[BUFSIZE + 1];
     struct connection *c = (struct connection *) arg;
-    int error, nread;
+    int error;// nread;
 
 	// find out the name and port of the remote host
     error = getnameinfo((struct sockaddr *) &c->addr, c->addr_len, host, 100, port, 10, NI_NUMERICSERV);
@@ -400,7 +400,7 @@ void *echo(void *arg)
 
     int sock2 = dup(c->fd);
     FILE* fin = fdopen(c->fd, "r");
-    FILE* fout = fdopen(sock2, "w");
+   // FILE* fout = fdopen(sock2, "w");
     
     int cd;
     strbuff_t sb;
@@ -421,8 +421,17 @@ void *echo(void *arg)
     write(sock2, "CONNECTED TO SERVER\n", 20);
 
     while ((cd = getc(fin)) != EOF) {
+        if (cd == '\0') {
+            write(sock2, "ERR\nBAD\n", 8);
 
-        if(!isspace(cd)) { // if its a character
+            free(sb.data); // reset the data string
+            sb.data = malloc(sizeof(char));
+            sb.data[0] = '\0';
+            sb.length = 1;
+            sb.used = 1;
+
+            break;
+         } else if(!isspace(cd)) { // if its a character
             sb_append(&sb, cd);
 
             if (i >= 3) {
@@ -432,8 +441,7 @@ void *echo(void *arg)
             if (i == 1) { //first payload (command)
                 if (sb.used != 3) { // the index of null terminator is not 
                     // throw error to socket saying invalid command
-                } // SET\n8\nabc\nxyz\n
-
+                } 
                 if (strcmp(sb.data, "GET") == 0 || strcmp(sb.data, "DEL") == 0) {
                     strcpy(command, sb.data);
                     n = 4;
@@ -451,10 +459,11 @@ void *echo(void *arg)
                     sb.data[0] = '\0';
                     sb.length = 1;
                     sb.used = 1;
+                    free(key);
+                    free(value);
 
                     break;
                 }
-               // printf("Command: %s\n", command);
             } else if (i == 2) { // need to save the size
                 // throw error if this is not a number
                 size = atoi(sb.data);
@@ -472,21 +481,20 @@ void *echo(void *arg)
                     sb.length = 1;
                     sb.used = 1;
 
-                    continue;
+                    free(key);
+                    free(value);
+                    break;
                 }       
 
                 i++;
-               // printf("Size: %d\n", size);
             } else if (i == 3) { // dealing with key
                 key = malloc(sizeof(char) * sb.used + 1);
                 strcpy(key, sb.data);
                 i++;
-               // printf("Key: %s\n", key);
             } else if (i == 4) { // dealing with value
                 value = malloc(sizeof(char) * sb.used + 1);
                 strcpy(value, sb.data);
                 i++;
-              //  printf("Value: %s\n", value);
             }
             
             free(sb.data); // reset the data string
@@ -495,11 +503,9 @@ void *echo(void *arg)
             sb.length = 1;
             sb.used = 1;
             
-        //    printf("n: %d | i: %d\n", n, i);
-            
             if (n == i) { // execute the commands
                 
-                if (numCharacters > size){
+                if (numCharacters != size){
                    write(sock2, "ERR\nLEN\n", 8);
 
                     n = 0;
@@ -511,7 +517,10 @@ void *echo(void *arg)
                     sb.data[0] = '\0';
                     sb.length = 1;
                     sb.used = 1;
-                    continue;
+                    free(key);
+                    free(value);
+
+                    break;
                 }
 
                 if (strcmp(command, "GET") == 0) {
@@ -579,9 +588,11 @@ void *echo(void *arg)
   
     printf("[%s:%s] got EOF\n", host, port);
 
+    fclose(fin);
     free(sb.data);
     close(c->fd);
     free(c);
+    // shutdown(sock2);
     return NULL;
 }
 
