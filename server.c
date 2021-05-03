@@ -87,7 +87,7 @@ struct keyValueList* deleteKeyValue(struct keyValueList* list, char* sentKey, pt
                 free(curr->key);
                 free(curr->value);
                 list = list->nextPair;
-
+                free(curr);
             } else if (curr->nextPair == NULL) { // if its the last one
                 prev->nextPair = NULL;
                 free(curr->key);
